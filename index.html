@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracciamento Progetti Desktop</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+	<link rel="icon" href="favicon.ico">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8F7F4; /* Light Beige */
+            color: #4A5568;
+            /* Le seguenti righe sono specifiche per Electron, per permettere il trascinamento della finestra */
+            -webkit-app-region: drag; 
+        }
+        .drag-handle {
+            -webkit-app-region: drag;
+        }
+        .no-drag {
+            -webkit-app-region: no-drag; /* Elementi interattivi non devono essere trascinabili */
+        }
+        /* --- Stili generali dell'applicazione --- */
+        .main-container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 300px;
+            background-color: #FFFFFF;
+            border-right: 1px solid #E2E8F0;
+            display: flex;
+            flex-direction: column;
+        }
+        .content-area {
+            flex-grow: 1;
+            padding: 2rem;
+            overflow-y: auto;
+        }
+        .project-item.active {
+            background-color: #F0EFEA;
+            border-left: 4px solid #3AAFA9;
+            font-weight: 600;
+        }
+        .stat-card {
+            background-color: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .timer-display {
+            font-size: 4rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            color: #17252A;
+        }
+        .btn-primary {
+            background-color: #3AAFA9;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        .btn-primary:hover {
+            background-color: #2B7A78;
+        }
+        .btn-danger {
+            background-color: #EF4444;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        .btn-danger:hover {
+            background-color: #DC2626;
+        }
+        .btn-secondary {
+            background-color: #E2E8F0;
+            color: #4A5568;
+            transition: background-color 0.3s;
+        }
+        .btn-secondary:hover {
+            background-color: #CBD5E0;
+        }
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 400px;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            height: 300px;
+            margin: 2rem auto 0;
+        }
+        .report-chart-container,
+        .daily-project-chart-container {
+            position: relative;
+            width: 100%;
+            height: 320px; /* Altezza fissa per i grafici */
+            margin: 2rem auto 0;
+        }
+        /* Stili per le notifiche */
+        #notification-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .notification {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            transform: translateY(-20px);
+        }
+        .notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .notification.success {
+            background-color: #3AAFA9; /* Teal */
+        }
+        .notification.error {
+            background-color: #EF4444; /* Red */
+        }
+        .notification.info {
+            background-color: #F6AD55; /* Amber */
+        }
+        .notification.warning { /* Aggiunto stile per warning */
+            background-color: #FF9800; /* Arancione */
+        }
+
+        /* Empty State per i grafici */
+        .chart-empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%; /* Occupa l'altezza del contenitore del grafico */
+            color: #718096; /* Gray-600 */
+            text-align: center;
+            padding: 1rem;
+            border: 1px dashed #CBD5E0; /* Gray-300 */
+            border-radius: 0.5rem;
+            background-color: #F7FAFC; /* Gray-50 */
+        }
+        .chart-empty-state svg {
+            width: 50px;
+            height: 50px;
+            margin-bottom: 0.5rem;
+            color: #A0AEC0; /* Gray-400 */
+        }
+
+        /* --- Stili per la responsività --- */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                max-height: 40vh;
+                overflow-y: auto;
+            }
+            .content-area {
+                padding: 1rem;
+            }
+            .timer-display {
+                font-size: 3rem;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="app" class="main-container">
+        <aside class="sidebar flex flex-col">
+            <div class="p-4 border-b border-gray-200 drag-handle">
+                <h1 class="text-xl font-bold text-gray-800">I Miei Progetti</h1>
+            </div>
+            <nav id="project-list" class="flex-grow overflow-y-auto no-drag">
+            </nav>
+            <div class="p-4 border-t border-gray-200 no-drag">
+                <button id="add-project-btn" class="w-full btn-primary font-bold py-2 px-4 rounded-lg mb-2">
+                    + Nuovo Progetto
+                </button>
+                <button id="export-data-btn" class="w-full btn-secondary font-bold py-2 px-4 rounded-lg mb-2">
+                    Esporta Dati (JSON)
+                </button>
+                <input type="file" id="import-file-input" accept=".json" class="hidden"/>
+                <button id="import-data-btn" class="w-full btn-secondary font-bold py-2 px-4 rounded-lg">
+                    Importa Dati (JSON)
+                </button>
+            </div>
+        </aside>
+
+        <main id="main-content" class="content-area">
+        </main>
+    </div>
+
+    <div id="notification-container"></div>
+
+    <div id="new-project-modal" class="modal-backdrop hidden no-drag">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Crea Nuovo Progetto</h2>
+            <input type="text" id="new-project-name" placeholder="Nome del progetto" class="w-full p-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-teal-500">
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-project-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Annulla</button>
+                <button id="save-project-btn" class="px-4 py-2 btn-primary rounded-lg">Salva</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="confirm-delete-modal" class="modal-backdrop hidden no-drag">
+        <div class="modal-content">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">Conferma Eliminazione</h2>
+            <p id="delete-confirmation-text" class="mb-6"></p>
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-delete-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Annulla</button>
+                <button id="confirm-delete-btn" class="px-4 py-2 btn-danger rounded-lg">Elimina</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="edit-session-modal" class="modal-backdrop hidden no-drag">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Modifica Sessione</h2>
+            <input type="hidden" id="edit-session-id">
+            <div class="mb-4">
+                <label for="edit-start-date" class="block text-sm font-medium text-gray-700">Data Inizio:</label>
+                <input type="date" id="edit-start-date" class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div class="mb-4">
+                <label for="edit-start-time" class="block text-sm font-medium text-gray-700">Ora Inizio:</label>
+                <input type="time" id="edit-start-time" class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div class="mb-4">
+                <label for="edit-end-date" class="block text-sm font-medium text-gray-700">Data Fine:</label>
+                <input type="date" id="edit-end-date" class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div class="mb-4">
+                <label for="edit-end-time" class="block text-sm font-medium text-gray-700">Ora Fine:</label>
+                <input type="time" id="edit-end-time" class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+            <div class="mb-4">
+                <label for="edit-session-notes" class="block text-sm font-medium text-gray-700">Note Sessione:</label>
+                <textarea id="edit-session-notes" rows="3" placeholder="Aggiungi note per questa sessione..." class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"></textarea>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-edit-session-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Annulla</button>
+                <button id="save-edit-session-btn" class="px-4 py-2 btn-primary rounded-lg">Salva Modifiche</button>
+            </div>
+        </div>
+    </div>
+	
+  <!-- INTEGRAZIONE SERVICE WORKER -->
+    <script>
+    // Registra il service worker se supportato
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('service-worker.js')
+        .then(function(registration) {
+          // Registrazione avvenuta con successo
+          console.log('ServiceWorker registrato con scope:', registration.scope);
+        }, function(error) {
+          // Registrazione fallita
+          console.log('ServiceWorker registration failed:', error);
+        });
+      });
+    }
+    </script>
+	
+    <script>
+        // --- UI_Manager: Gestisce l'interfaccia utente e le interazioni del DOM ---
+        const UI_Manager = {
+            // Mostra o nasconde un modale specificato dall'ID
+            showModal(id) {
+                document.getElementById(id).classList.remove('hidden');
+            },
+            hideModal(id) {
+                document.getElementById(id).classList.add('hidden');
+            },
+
+            // Mostra una notifica temporanea all'utente
+            showNotification(message, type = 'info', duration = 3000) {
+                const container = document.getElementById('notification-container');
+                const notification = document.createElement('div');
+                notification.className = `notification ${type}`;
+                notification.textContent = message;
+                container.appendChild(notification);
+
+                // Mostra la notifica con un ritardo per l'animazione CSS
+                setTimeout(() => {
+                    notification.classList.add('show');
+                }, 10); 
+
+                // Rimuove la notifica dopo la durata specificata
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                    notification.addEventListener('transitionend', () => {
+                        notification.remove();
+                    });
+                }, duration);
+            },
+
+            // Formatta la durata da secondi a HH:MM:SS
+            formatDuration(seconds) {
+                if (isNaN(seconds) || seconds < 0) return '00:00:00';
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                const s = Math.floor(seconds % 60);
+                return [
+                    h.toString().padStart(2, '0'),
+                    m.toString().padStart(2, '0'),
+                    s.toString().padStart(2, '0')
+                ].join(':');
+            },
+
+            // Formatta una data in un formato leggibile per CSV/Excel (GG/MM/AAAA HH:MM:SS) - Mantenuto per coerenza, anche se CSV rimosso
+            formatDateForExport(timestamp) {
+                const date = new Date(timestamp);
+                const pad = (num) => num.toString().padStart(2, '0');
+                const day = pad(date.getDate());
+                const month = pad(date.getMonth() + 1); // Mesi da 0 a 11
+                const year = date.getFullYear();
+                const hours = pad(date.getHours());
+                const minutes = pad(date.getMinutes());
+                const seconds = pad(date.getSeconds());
+                return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+            },
+
+            // Avvolge il testo per visualizzarlo in spazi limitati (es. etichette grafico, note tabella)
+            wrapText(text, maxLen) {
+                if (text.length <= maxLen) return text;
+                let wrappedText = [];
+                let words = text.split(' ');
+                let currentLine = '';
+                for (let i = 0; i < words.length; i++) {
+                    let word = words[i];
+                    if ((currentLine + word).length <= maxLen) {
+                        currentLine += (currentLine === '' ? '' : ' ') + word;
+                    } else {
+                        wrappedText.push(currentLine);
+                        currentLine = word;
+                    }
+                }
+                wrappedText.push(currentLine);
+                return wrappedText.join('\n'); // Utilizza newline per Chart.js
+            },
+
+            // Ottiene la data in formato YYYY-MM-DD
+            getISODate(date) {
+                return date.toISOString().split('T')[0];
+            },
+
+            // Ottiene l'ora in formato HH:MM
+            getISOTime(date) {
+                return date.toTimeString().substring(0, 5);
+            },
+
+            // Palette di colori per i grafici (migliorato per contrasto)
+            chartColors: [
+                '#4CAF50', // Verde vibrante
+                '#2196F3', // Blu medio
+                '#FFC107', // Giallo ambra
+                '#E91E63', // Rosa intenso
+                '#9C27B0', // Viola
+                '#00BCD4', // Ciano
+                '#FF5722', // Arancione scuro
+                '#795548', // Marrone
+                '#607D8B', // Blu ardesia
+                '#F44336', // Rosso
+                '#3F51B5', // Indaco
+                '#009688', // Verde acqua
+                '#8BC34A', // Verde chiaro
+                '#CDDC39', // Lime
+                '#FFEB3B', // Giallo
+                '#FF9800', // Arancione
+                '#FF4081', // Rosa accentuato
+                '#7C4DFF', // Viola scuro
+                '#448AFF', // Blu chiaro accentuato
+                '#00E676', // Verde accentuato
+                '#FFD740'  // Giallo ambra accentuato
+            ],
+
+            // Genera l'HTML per uno stato vuoto del grafico
+            getEmptyChartState(message = 'Nessun dato disponibile per questo grafico.') {
+                return `
+                    <div class="chart-empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l-2 2m2-2l2 2m-6 3h6m-3 0V4m-3 3h3m-3 9v-3m0 0l-2-2m2 2l2 2m-3-3H6m3 0H6m-6 3h6m-3 0v-3m0 0l-2 2m2 2l2 2m-3-3H6m3 0H6M4 12H1m2 0v3m0 0l-2 2m2-2l2 2m-3 3H1m2 0H1" />
+                        </svg>
+                        <p class="text-sm font-semibold">${message}</p>
+                        <p class="text-xs mt-1">Avvia una sessione per iniziare a vedere i dati.</p>
+                    </div>
+                `;
+            }
+        };
+
+        // --- Data_Manager: Gestisce il caricamento e il salvataggio dei dati ---
+        const Data_Manager = {
+            projects: [],
+            sessions: [],
+
+            // Carica i dati da Electron API o localStorage
+            async loadData() {
+                try {
+                    if (window.electronAPI) {
+                        const loadedData = await window.electronAPI.loadData(); 
+                        this.projects = loadedData.projects || [];
+                        this.sessions = loadedData.sessions || [];
+                        UI_Manager.showNotification('Dati caricati da Electron.', 'success');
+                    } else {
+                        const projectsData = localStorage.getItem('timeTrackerProjects');
+                        this.projects = projectsData ? JSON.parse(projectsData) : [];
+                        const sessionsData = localStorage.getItem('timeTrackerSessions');
+                        this.sessions = sessionsData ? JSON.parse(sessionsData) : [];
+                        UI_Manager.showNotification('Dati caricati da localStorage.', 'info');
+                    }
+                } catch (e) {
+                    UI_Manager.showNotification('Errore durante il caricamento dei dati: ' + e.message, 'error');
+                    console.error('Errore durante il caricamento dei dati:', e);
+                    this.projects = [];
+                    this.sessions = [];
+                }
+            },
+
+            // Salva i dati usando Electron API o localStorage
+            saveData() {
+                try {
+                    if (window.electronAPI) {
+                        window.electronAPI.saveData({
+                            projects: this.projects,
+                            sessions: this.sessions
+                        });
+                        // UI_Manager.showNotification('Dati salvati su Electron.', 'success'); // Meno spammy
+                    } else {
+                        localStorage.setItem('timeTrackerProjects', JSON.stringify(this.projects));
+                        localStorage.setItem('timeTrackerSessions', JSON.stringify(this.sessions));
+                        // UI_Manager.showNotification('Dati salvati su localStorage.', 'success'); // Meno spammy
+                    }
+                } catch (e) {
+                    UI_Manager.showNotification('Errore durante il salvataggio dei dati: ' + e.message, 'error');
+                    console.error('Errore durante il salvataggio dei dati:', e);
+                }
+            },
+
+            // --- FUNZIONI PER L'ESPORTAZIONE JSON ---
+            exportData() {
+                // Prepara i dati per l'esportazione
+                const dataToExport = {
+                    projects: this.projects,
+                    sessions: this.sessions
+                };
+
+                const jsonString = JSON.stringify(dataToExport, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+
+                if (window.electronAPI) {
+                    window.electronAPI.exportData(jsonString, 'time_tracker_data.json')
+                        .then(() => UI_Manager.showNotification('Dati esportati con successo via Electron!', 'success'))
+                        .catch(err => UI_Manager.showNotification('Errore esportazione dati via Electron: ' + err.message, 'error'));
+                } else {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'time_tracker_data.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    UI_Manager.showNotification('Dati esportati in formato JSON!', 'success');
+                }
+            },
+
+            // --- FUNZIONI PER L'IMPORTAZIONE JSON ---
+            async importData(file) {
+                if (!file) {
+                    UI_Manager.showNotification('Nessun file selezionato per l\'importazione.', 'error');
+                    return;
+                }
+
+                const fileExtension = file.name.split('.').pop().toLowerCase();
+                let parsedData;
+
+                try {
+                    const fileContent = await file.text();
+
+                    if (fileExtension === 'json') {
+                        parsedData = JSON.parse(fileContent);
+                        if (!parsedData.projects || !parsedData.sessions) {
+                            throw new Error('Il file JSON non contiene i dati di progetti e sessioni attesi.');
+                        }
+                    } else {
+                        // Rimosso il supporto CSV, quindi qualsiasi cosa non JSON è un errore
+                        throw new Error('Formato file non supportato. Si prega di importare file JSON.');
+                    }
+
+                    // Logica di unione per i progetti (solo da JSON)
+                    if (fileExtension === 'json') { // Mantenuto il controllo per chiarezza, anche se ora è l'unica opzione
+                        parsedData.projects.forEach(importedProject => {
+                            // Controlla se il progetto esiste già per ID o nome
+                            if (!this.projects.some(p => p.id === importedProject.id || p.name === importedProject.name)) {
+                                this.projects.push(importedProject);
+                            } else {
+                                // Potresti voler aggiornare i progetti esistenti qui se l'ID corrisponde
+                                // Esempio:
+                                // let existingProject = this.projects.find(p => p.id === importedProject.id);
+                                // if (existingProject) { Object.assign(existingProject, importedProject); }
+                            }
+                        });
+
+                        // Logica di unione per le sessioni (solo da JSON)
+                        parsedData.sessions.forEach(importedSession => {
+                            // Assicurati che non ci siano sessioni con lo stesso ID
+                            if (!this.sessions.some(s => s.id === importedSession.id)) {
+                                // Assicurati che il progetto associato esista, altrimenti salta la sessione
+                                if (this.projects.some(p => p.id === importedSession.projectId)) {
+                                    this.sessions.push(importedSession);
+                                } else {
+                                    UI_Manager.showNotification(`Sessione con ID "${importedSession.id}" saltata: progetto associato non trovato.`, 'warning', 4000);
+                                }
+                            }
+                        });
+                    }
+                    
+
+                    this.saveData();
+                    App_Logic.renderAllUI();
+                    UI_Manager.showNotification('Dati importati con successo!', 'success');
+
+                } catch (e) {
+                    UI_Manager.showNotification('Errore durante l\'importazione del file: ' + e.message, 'error', 5000);
+                    console.error('Errore importazione file:', e);
+                } finally {
+                     // Assicurati di resettare l'input file dopo l'operazione
+                    document.getElementById('import-file-input').value = '';
+                }
+            }
+        };
+
+        // --- App_Logic: Contiene la logica di business principale dell'applicazione ---
+        const App_Logic = {
+            activeProjectId: null,
+            timerInterval: null,
+            startTime: null, 
+            currentFilters: { // Proprietà per gestire lo stato dei filtri sessione
+                startDate: null,
+                endDate: null,
+                searchQuery: ''
+            },
+            currentReportFilters: { // Nuova proprietà per gestire lo stato dei filtri report
+                startDate: null,
+                endDate: null
+            },
+
+            async init() {
+                await Data_Manager.loadData(); 
+                
+                const activeRunningSession = this.getActiveSession();
+                if (activeRunningSession) {
+                    this.activeProjectId = activeRunningSession.projectId;
+                    this.startTime = activeRunningSession.startTime; 
+                    this.timerInterval = setInterval(() => this.updateTimerDisplay(), 1000); 
+                    UI_Manager.showNotification('Timer ripreso per la sessione in corso.', 'info');
+                } else if (Data_Manager.projects.length > 0) {
+                    // Se non ci sono sessioni attive, seleziona il primo progetto disponibile
+                    this.activeProjectId = Data_Manager.projects[0].id; 
+                } else {
+                    this.activeProjectId = null;
+                }
+
+                this.renderAllUI();
+                // Chiamata agli event listener statici
+                this.attachStaticEventListeners();
+            },
+
+            // Aggiorna tutta l'UI
+            renderAllUI() {
+                this.renderProjectList();
+                this.renderProjectView();
+            },
+
+            // Attacca gli event listener per gli elementi statici del DOM (che non vengono ricreati)
+            attachStaticEventListeners() {
+                document.getElementById('add-project-btn').addEventListener('click', () => UI_Manager.showModal('new-project-modal'));
+                
+                // Ora esporta solo JSON
+                document.getElementById('export-data-btn').addEventListener('click', () => {
+                    Data_Manager.exportData(); // Esporta solo JSON
+                });
+
+                // Event listener per l'importazione
+                const importFileInput = document.getElementById('import-file-input');
+                document.getElementById('import-data-btn').addEventListener('click', () => {
+                    importFileInput.click(); // Triggera il click sull'input file nascosto
+                });
+                // Aggiornato per accettare solo .json
+                importFileInput.setAttribute('accept', '.json'); 
+                importFileInput.addEventListener('change', (event) => {
+                    const file = event.target.files[0];
+                    if (file) {
+                        Data_Manager.importData(file);
+                    }
+                    // L'input.value viene resettato in Data_Manager.importData.finally per coerenza.
+                });
+
+                document.getElementById('cancel-project-btn').addEventListener('click', () => {
+                    document.getElementById('new-project-name').value = ''; 
+                    UI_Manager.hideModal('new-project-modal');
+                });
+                document.getElementById('save-project-btn').addEventListener('click', () => this.addProject());
+                
+                document.getElementById('cancel-delete-btn').addEventListener('click', () => UI_Manager.hideModal('confirm-delete-modal'));
+                document.getElementById('confirm-delete-btn').addEventListener('click', () => this.deleteProjectConfirmed());
+
+                document.getElementById('cancel-edit-session-btn').addEventListener('click', () => UI_Manager.hideModal('edit-session-modal'));
+                document.getElementById('save-edit-session-btn').addEventListener('click', () => this.saveEditedSession());
+
+                // Listener delegato per la lista dei progetti (statico)
+                document.getElementById('project-list').addEventListener('click', (e) => {
+                    const projectItem = e.target.closest('.project-item');
+                    if (projectItem) {
+                        const activeRunningSession = this.getActiveSession();
+                        if (activeRunningSession && activeRunningSession.projectId !== parseInt(projectItem.dataset.id)) {
+                            const activeProjectName = this.getProjectById(activeRunningSession.projectId)?.name || 'un altro progetto';
+                            UI_Manager.showNotification(`C'è già una sessione attiva per il progetto "${activeProjectName}". Ferma quella sessione prima di selezionarne uno nuovo.`, 'error');
+                            return;
+                        }
+                        this.selectProject(parseInt(projectItem.dataset.id));
+                    }
+                });
+                
+                // Listener delegato per l'area di contenuto principale (statico)
+                document.getElementById('main-content').addEventListener('click', (e) => {
+                    if (e.target.id === 'timer-control-btn') {
+                        this.toggleTimer();
+                    }
+                    if (e.target.closest('.delete-project-btn')) {
+                        this.showDeleteConfirmation();
+                    }
+                });
+            },
+            
+            showDeleteConfirmation() {
+                const project = this.getProjectById(this.activeProjectId);
+                if (!project) return;
+                document.getElementById('delete-confirmation-text').textContent = `Sei sicuro di voler eliminare il progetto "${project.name}" e tutte le sue sessioni di lavoro? Questa azione non può essere annullata.`;
+                UI_Manager.showModal('confirm-delete-modal');
+            },
+
+            deleteProjectConfirmed() {
+                if (this.activeProjectId === null) return;
+                
+                Data_Manager.sessions = Data_Manager.sessions.filter(s => s.projectId !== this.activeProjectId);
+                Data_Manager.projects = Data_Manager.projects.filter(p => p.id !== this.activeProjectId);
+                
+                if (this.timerInterval && this.getActiveSession()?.projectId === this.activeProjectId) {
+                    clearInterval(this.timerInterval);
+                    this.timerInterval = null;
+                    this.startTime = null;
+                }
+
+                this.activeProjectId = Data_Manager.projects.length > 0 ? Data_Manager.projects[0].id : null;
+                
+                Data_Manager.saveData();
+                this.renderAllUI();
+                UI_Manager.hideModal('confirm-delete-modal');
+                UI_Manager.showNotification('Progetto eliminato con successo.', 'success');
+            },
+            
+            addProject() {
+                const projectNameInput = document.getElementById('new-project-name');
+                const name = projectNameInput.value.trim();
+                if (name) {
+                    // Controlla se esiste già un progetto con questo nome
+                    if (Data_Manager.projects.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+                        UI_Manager.showNotification('Esiste già un progetto con questo nome!', 'error');
+                        return;
+                    }
+                    const newProject = {
+                        id: Date.now(),
+                        name: name,
+                        status: 'Attivo'
+                    };
+                    Data_Manager.projects.push(newProject);
+                    this.activeProjectId = newProject.id;
+                    Data_Manager.saveData();
+                    this.renderAllUI();
+                    projectNameInput.value = '';
+                    UI_Manager.hideModal('new-project-modal');
+                    UI_Manager.showNotification('Progetto aggiunto con successo!', 'success');
+                } else {
+                    UI_Manager.showNotification('Il nome del progetto non può essere vuoto!', 'error');
+                }
+            },
+
+            selectProject(projectId) {
+                this.activeProjectId = projectId;
+                Data_Manager.saveData();
+                this.renderAllUI();
+                UI_Manager.showNotification('Progetto selezionato.', 'info');
+            },
+
+            renderProjectList() {
+                const listEl = document.getElementById('project-list');
+                if (Data_Manager.projects.length === 0) {
+                    listEl.innerHTML = '<p class="p-4 text-gray-500 text-sm">Nessun progetto. Aggiungine uno per iniziare.</p>';
+                    return;
+                }
+                listEl.innerHTML = Data_Manager.projects.map(project => `
+                    <div class="project-item cursor-pointer p-4 border-b border-gray-200 hover:bg-gray-100 ${project.id === this.activeProjectId ? 'active' : ''}" data-id="${project.id}">
+                        <p class="font-semibold text-gray-800">${project.name}</p>
+                        <p class="text-sm text-gray-500">${project.status}</p>
+                    </div>
+                `).join('');
+            },
+            
+            renderProjectView() {
+                const contentEl = document.getElementById('main-content');
+                if (!this.activeProjectId || !this.getProjectById(this.activeProjectId)) {
+                    contentEl.innerHTML = `
+                        <div class="flex flex-col items-center justify-center h-full text-center text-gray-500">
+                            <h2 class="text-2xl font-bold">Benvenuto!</h2>
+                            <p class="mt-2">Seleziona un progetto dalla lista o creane uno nuovo per iniziare a tracciare il tuo tempo.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const project = this.getProjectById(this.activeProjectId);
+                const stats = this.calculateProjectStats(project.id);
+
+                const isTimerRunning = this.timerInterval !== null && this.getActiveSession()?.projectId === this.activeProjectId;
+                
+                contentEl.innerHTML = `
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-3xl font-bold text-gray-800">${project.name}</h2>
+                        <div class="flex items-center space-x-2 no-drag">
+                            <select id="project-status-select" class="p-2 border border-gray-300 rounded-md text-sm">
+                                <option value="Attivo" ${project.status === 'Attivo' ? 'selected' : ''}>Attivo</option>
+                                <option value="Completato" ${project.status === 'Completato' ? 'selected' : ''}>Completato</option>
+                                <option value="In Pausa" ${project.status === 'In Pausa' ? 'selected' : ''}>In Pausa</option>
+                            </select>
+                            <button class="delete-project-btn p-2 rounded-full hover:bg-red-100 text-gray-500 hover:text-red-600 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white p-6 rounded-lg shadow-md mb-6 no-drag">
+                        <div class="flex flex-col md:flex-row items-center justify-between">
+                            <div class="text-center md:text-left mb-4 md:mb-0">
+                                <p class="text-sm uppercase text-gray-500">Timer Sessione Corrente</p>
+                                <p id="timer-display" class="timer-display">00:00:00</p>
+                            </div>
+                            <button id="timer-control-btn" class="w-full md:w-auto text-2xl font-bold py-4 px-8 rounded-lg ${isTimerRunning ? 'btn-danger' : 'btn-primary'}">
+                                ${isTimerRunning ? 'STOP' : 'START'}
+                            </button>
+                        </div>
+                        <div class="mt-4">
+                            <label for="current-session-notes" class="block text-sm font-medium text-gray-700 mb-1">Note Sessione Corrente:</label>
+                            <textarea id="current-session-notes" rows="2" placeholder="Cosa stai facendo in questa sessione?" class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 no-drag"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                        <div class="stat-card">
+                            <p class="text-sm uppercase text-gray-500">Tempo Totale Lavorato</p>
+                            <p class="text-2xl font-bold text-gray-800" id="total-time">${UI_Manager.formatDuration(stats.totalDuration)}</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="text-sm uppercase text-gray-500">Sessioni Cominciate</p>
+                            <p class="text-2xl font-bold text-gray-800" id="session-count">${stats.sessionCount}</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="text-sm uppercase text-gray-500">Ultima Sessione</p>
+                            <p class="text-2xl font-bold text-gray-800" id="last-session-date">${stats.lastSessionDate || 'N/D'}</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                        <h3 class="text-xl font-bold mb-4 text-gray-800">Distribuzione del Tempo (Tutti i Progetti)</h3>
+                        <div class="chart-container">
+                            <canvas id="timeDistributionChart"></canvas>
+                            <div id="timeDistributionChartEmptyState" class="hidden absolute inset-0"></div>
+                        </div>
+                        <div id="time-distribution-summary" class="mt-4 text-sm text-gray-600"></div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                        <h3 class="text-xl font-bold mb-4 text-gray-800">Tempo Lavorato al Giorno (Tutti i Progetti)</h3>
+                        <div id="dailyProjectTimeChartContainer" class="daily-project-chart-container">
+                            </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-lg shadow-md mb-6 no-drag">
+                        <h3 class="text-xl font-bold mb-4 text-gray-800">Reportistica Avanzata</h3>
+                        <div class="flex flex-wrap gap-4 mb-4">
+                            <div>
+                                <label for="report-start-date" class="block text-sm font-medium text-gray-700">Da Data:</label>
+                                <input type="date" id="report-start-date" class="p-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label for="report-end-date" class="block text-sm font-medium text-gray-700">A Data:</label>
+                                <input type="date" id="report-end-date" class="p-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex items-end gap-2">
+                                <button id="generate-report-btn" class="btn-primary py-2 px-4 rounded-lg">Genera Report</button>
+                                <button id="clear-report-filters-btn" class="btn-secondary py-2 px-4 rounded-lg">Reset</button>
+                            </div>
+                        </div>
+                        <div class="report-chart-container">
+                            <canvas id="reportChart"></canvas>
+                            <div id="reportChartEmptyState" class="hidden absolute inset-0"></div>
+                        </div>
+                        <div id="report-summary" class="mt-4 text-sm text-gray-600"></div>
+                    </div>
+
+
+                    <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                        <h3 class="text-xl font-bold mb-4 text-gray-800">Storico Sessioni</h3>
+                        <div class="flex flex-wrap gap-4 mb-4 no-drag">
+                            <div>
+                                <label for="session-filter-start-date" class="block text-sm font-medium text-gray-700">Da Data:</label>
+                                <input type="date" id="session-filter-start-date" class="p-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label for="session-filter-end-date" class="block text-sm font-medium text-gray-700">A Data:</label>
+                                <input type="date" id="session-filter-end-date" class="p-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <label for="session-search-input" class="block text-sm font-medium text-gray-700">Cerca Note:</label>
+                                <input type="text" id="session-search-input" placeholder="Cerca nelle note..." class="p-2 border border-gray-300 rounded-md">
+                            </div>
+                            <div class="flex items-end gap-2">
+                                <button id="apply-filters-btn" class="btn-primary py-2 px-4 rounded-lg">Applica Filtri</button>
+                                <button id="clear-filters-btn" class="btn-secondary py-2 px-4 rounded-lg">Reset</button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full bg-white">
+                                <thead>
+                                    <tr class="bg-gray-100 text-left text-gray-600 uppercase text-sm leading-normal">
+                                        <th class="py-3 px-6 text-left">Inizio</th>
+                                        <th class="py-3 px-6 text-left">Fine</th>
+                                        <th class="py-3 px-6 text-left">Durata</th>
+                                        <th class="py-3 px-6 text-left">Note</th>
+                                        <th class="py-3 px-6 text-center">Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="session-history" class="text-gray-600 text-sm font-light">
+                                </tbody>
+                            </table>
+                            <div id="sessionHistoryEmptyState" class="hidden chart-empty-state">
+                                <p class="text-sm font-semibold">Nessuna sessione trovata per questo progetto con i filtri attuali.</p>
+                                <p class="text-xs mt-1">Prova a modificare i filtri o avvia una sessione.</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Aggiorna timer display se attivo
+                if (isTimerRunning) {
+                    this.updateTimerDisplay();
+                    document.getElementById('current-session-notes').value = this.getActiveSession()?.notes || '';
+                } else {
+                    document.getElementById('timer-display').textContent = '00:00:00';
+                    document.getElementById('current-session-notes').value = '';
+                }
+
+                this.attachDynamicEventListeners();
+                this.renderTimeDistributionChart();
+                this.renderDailyProjectTimeChart();
+                this.renderSessionHistory();
+                this.setupReportFilters(); // Configura i filtri del report
+                this.generateReport(); // Genera il report iniziale
+            },
+
+            attachDynamicEventListeners() {
+                // Event listener per il cambio di stato del progetto
+                document.getElementById('project-status-select')?.addEventListener('change', (e) => {
+                    const newStatus = e.target.value;
+                    this.updateProjectStatus(this.activeProjectId, newStatus);
+                });
+
+                // Listener per le note della sessione corrente
+                document.getElementById('current-session-notes')?.addEventListener('input', (e) => {
+                    const activeSession = this.getActiveSession();
+                    if (activeSession) {
+                        activeSession.notes = e.target.value;
+                        Data_Manager.saveData();
+                    }
+                });
+
+                // Listener delegato per i pulsanti di modifica/eliminazione sessione (all'interno della tabella)
+                document.getElementById('session-history')?.addEventListener('click', (e) => {
+                    if (e.target.closest('.edit-session-btn')) {
+                        const sessionId = parseInt(e.target.closest('.edit-session-btn').dataset.sessionId);
+                        this.editSession(sessionId);
+                    } else if (e.target.closest('.delete-session-btn')) {
+                        const sessionId = parseInt(e.target.closest('.delete-session-btn').dataset.sessionId);
+                        this.deleteSession(sessionId);
+                    }
+                });
+
+                // Listener per i filtri delle sessioni
+                document.getElementById('apply-filters-btn')?.addEventListener('click', () => this.applySessionFilters());
+                document.getElementById('clear-filters-btn')?.addEventListener('click', () => this.clearSessionFilters());
+                
+                // Aggiorna i valori dei campi filtro con i valori correnti
+                const filterStartDateEl = document.getElementById('session-filter-start-date');
+                if (filterStartDateEl) filterStartDateEl.value = this.currentFilters.startDate || '';
+                const filterEndDateEl = document.getElementById('session-filter-end-date');
+                if (filterEndDateEl) filterEndDateEl.value = this.currentFilters.endDate || '';
+                const searchInputEl = document.getElementById('session-search-input');
+                if (searchInputEl) searchInputEl.value = this.currentFilters.searchQuery || '';
+            },
+
+            setupReportFilters() {
+                const reportStartDateEl = document.getElementById('report-start-date');
+                const reportEndDateEl = document.getElementById('report-end-date');
+
+                // Inizializza i valori dei filtri del report
+                if (reportStartDateEl) reportStartDateEl.value = this.currentReportFilters.startDate || '';
+                if (reportEndDateEl) reportEndDateEl.value = this.currentReportFilters.endDate || '';
+
+                document.getElementById('generate-report-btn')?.addEventListener('click', () => this.generateReport());
+                document.getElementById('clear-report-filters-btn')?.addEventListener('click', () => this.clearReportFilters());
+            },
+
+            generateReport() {
+                const reportStartDateEl = document.getElementById('report-start-date');
+                const reportEndDateEl = document.getElementById('report-end-date');
+
+                this.currentReportFilters.startDate = reportStartDateEl ? reportStartDateEl.value : null;
+                this.currentReportFilters.endDate = reportEndDateEl ? reportEndDateEl.value : null;
+
+                this.renderReportChart();
+            },
+
+            clearReportFilters() {
+                this.currentReportFilters.startDate = null;
+                this.currentReportFilters.endDate = null;
+                const reportStartDateEl = document.getElementById('report-start-date');
+                if (reportStartDateEl) reportStartDateEl.value = '';
+                const reportEndDateEl = document.getElementById('report-end-date');
+                if (reportEndDateEl) reportEndDateEl.value = '';
+                this.generateReport(); // Rigenera il report senza filtri
+            },
+
+            updateProjectStatus(projectId, newStatus) {
+                const project = this.getProjectById(projectId);
+                if (project) {
+                    project.status = newStatus;
+                    Data_Manager.saveData();
+                    this.renderProjectList(); // Aggiorna la lista per riflettere il nuovo stato
+                    UI_Manager.showNotification(`Stato del progetto "${project.name}" aggiornato a "${newStatus}".`, 'success');
+                }
+            },
+
+            getProjectById(id) {
+                return Data_Manager.projects.find(p => p.id === id);
+            },
+
+            getActiveSession() {
+                // Una sessione è "attiva" se non ha un endTime
+                return Data_Manager.sessions.find(session => session.endTime === null);
+            },
+
+            toggleTimer() {
+                const project = this.getProjectById(this.activeProjectId);
+                if (!project) {
+                    UI_Manager.showNotification('Seleziona un progetto per avviare il timer.', 'error');
+                    return;
+                }
+                
+                const currentNotes = document.getElementById('current-session-notes')?.value || '';
+
+                if (this.timerInterval) { // Il timer è attivo -> STOP
+                    clearInterval(this.timerInterval);
+                    this.timerInterval = null;
+                    const activeSession = this.getActiveSession();
+                    if (activeSession) {
+                        activeSession.endTime = new Date().toISOString();
+                        activeSession.notes = currentNotes;
+                        Data_Manager.saveData();
+                        UI_Manager.showNotification(`Sessione per "${project.name}" terminata.`, 'success');
+                    }
+                    this.startTime = null; // Resetta lo startTime
+                } else { // Il timer non è attivo -> START
+                    // Prima, assicurati che non ci siano altre sessioni attive
+                    const existingActiveSession = this.getActiveSession();
+                    if (existingActiveSession) {
+                        const existingProjectName = this.getProjectById(existingActiveSession.projectId)?.name || 'un altro progetto';
+                        UI_Manager.showNotification(`C'è già una sessione attiva per il progetto "${existingProjectName}". Ferma quella sessione prima di avviarne una nuova.`, 'error');
+                        return;
+                    }
+
+                    this.startTime = new Date().toISOString();
+                    const newSession = {
+                        id: Date.now(),
+                        projectId: this.activeProjectId,
+                        startTime: this.startTime,
+                        endTime: null, // Indefinito finché non viene fermato
+                        notes: currentNotes
+                    };
+                    Data_Manager.sessions.push(newSession);
+                    Data_Manager.saveData();
+
+                    this.timerInterval = setInterval(() => this.updateTimerDisplay(), 1000);
+                    UI_Manager.showNotification(`Sessione per "${project.name}" avviata!`, 'success');
+                }
+                this.renderProjectView(); // Aggiorna l'UI del progetto
+            },
+
+            updateTimerDisplay() {
+                const display = document.getElementById('timer-display');
+                const activeSession = this.getActiveSession();
+
+                if (display && activeSession && activeSession.startTime) {
+                    const elapsedSeconds = Math.floor((new Date() - new Date(activeSession.startTime)) / 1000);
+                    display.textContent = UI_Manager.formatDuration(elapsedSeconds);
+                } else if (display) {
+                    display.textContent = '00:00:00';
+                }
+            },
+
+            calculateProjectStats(projectId) {
+                const projectSessions = Data_Manager.sessions.filter(s => s.projectId === projectId && s.endTime !== null);
+                let totalDuration = 0;
+                let lastSessionDate = 'N/D';
+
+                projectSessions.forEach(session => {
+                    const start = new Date(session.startTime);
+                    const end = new Date(session.endTime);
+                    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+                        totalDuration += (end - start) / 1000;
+                    }
+                });
+
+                if (projectSessions.length > 0) {
+                    const lastSession = projectSessions.reduce((prev, current) => 
+                        (new Date(prev.endTime) > new Date(current.endTime)) ? prev : current
+                    );
+                    lastSessionDate = new Date(lastSession.endTime).toLocaleDateString('it-IT');
+                }
+
+                return {
+                    totalDuration: totalDuration,
+                    sessionCount: projectSessions.length,
+                    lastSessionDate: lastSessionDate
+                };
+            },
+
+            // --- Grafici ---
+            timeDistributionChart: null, // Riferimento al grafico a torta
+            dailyProjectTimeChart: null, // Riferimento al grafico a barre giornaliero
+            reportChart: null, // Riferimento al grafico del report
+
+            renderTimeDistributionChart() {
+                const ctx = document.getElementById('timeDistributionChart');
+                const emptyStateContainer = document.getElementById('timeDistributionChartEmptyState');
+                
+                // Calcola il tempo totale per ogni progetto (in minuti)
+                const projectDurations = Data_Manager.sessions.reduce((acc, session) => {
+                    if (session.endTime) { // Considera solo sessioni terminate
+                        const duration = (new Date(session.endTime) - new Date(session.startTime)) / (1000 * 60); // Durata in minuti
+                        if (!isNaN(duration)) {
+                            acc[session.projectId] = (acc[session.projectId] || 0) + duration;
+                        }
+                    }
+                    return acc;
+                }, {});
+
+                const labels = [];
+                const data = [];
+                const backgroundColors = [];
+                let colorIndex = 0;
+                let totalAppTime = 0;
+
+                Data_Manager.projects.forEach(project => {
+                    const duration = projectDurations[project.id] || 0;
+                    if (duration > 0) {
+                        labels.push(project.name);
+                        data.push(duration);
+                        backgroundColors.push(UI_Manager.chartColors[colorIndex % UI_Manager.chartColors.length]);
+                        colorIndex++;
+                        totalAppTime += duration;
+                    }
+                });
+
+                if (this.timeDistributionChart) {
+                    this.timeDistributionChart.destroy();
+                }
+
+                if (data.length === 0) {
+                    if (emptyStateContainer) {
+                        emptyStateContainer.innerHTML = UI_Manager.getEmptyChartState('Nessun dato di sessione registrato per i progetti.');
+                        emptyStateContainer.classList.remove('hidden');
+                    }
+                    document.getElementById('time-distribution-summary').textContent = '';
+                    return;
+                } else {
+                     if (emptyStateContainer) emptyStateContainer.classList.add('hidden');
+                }
+                
+                this.timeDistributionChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: data,
+                            backgroundColor: backgroundColors,
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: {
+                                    boxWidth: 20,
+                                    padding: 10,
+                                    font: {
+                                        size: 12
+                                    }
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.label || '';
+                                        const value = context.parsed;
+                                        const percentage = ((value / totalAppTime) * 100).toFixed(1);
+                                        return `${label}: ${UI_Manager.formatDuration(value * 60)} (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Aggiorna il riepilogo testuale sotto il grafico
+                const summaryEl = document.getElementById('time-distribution-summary');
+                if (summaryEl) {
+                    let summaryText = `Tempo totale tracciato nell'applicazione: ${UI_Manager.formatDuration(totalAppTime * 60)}. `;
+                    summaryText += labels.map((label, index) => {
+                        const duration = data[index];
+                        const percentage = ((duration / totalAppTime) * 100).toFixed(1);
+                        return `${label}: ${UI_Manager.formatDuration(duration * 60)} (${percentage}%)`;
+                    }).join(' | ');
+                    summaryEl.textContent = summaryText;
+                }
+            },
+
+            renderDailyProjectTimeChart() {
+                const ctxContainer = document.getElementById('dailyProjectTimeChartContainer');
+                
+                // Rimuovi canvas precedente e crea uno nuovo
+                const oldCanvas = ctxContainer.querySelector('canvas');
+                if (oldCanvas) {
+                    if (this.dailyProjectTimeChart) {
+                        this.dailyProjectTimeChart.destroy();
+                    }
+                    oldCanvas.remove();
+                }
+                const newCanvas = document.createElement('canvas');
+                newCanvas.id = 'dailyProjectTimeChart';
+                ctxContainer.appendChild(newCanvas);
+                const ctx = newCanvas.getContext('2d');
+
+                const emptyStateContainer = ctxContainer.querySelector('#dailyProjectTimeChartEmptyState') || (() => {
+                    const div = document.createElement('div');
+                    div.id = 'dailyProjectTimeChartEmptyState';
+                    div.className = 'hidden absolute inset-0';
+                    ctxContainer.appendChild(div);
+                    return div;
+                })();
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // Inizio del giorno
+                const sevenDaysAgo = new Date(today);
+                sevenDaysAgo.setDate(today.getDate() - 6); // Ultimi 7 giorni inclusi oggi
+
+                const dailyDurations = {}; // { 'YYYY-MM-DD': { projectId: durationInMinutes } }
+
+                Data_Manager.sessions.forEach(session => {
+                    if (session.endTime) {
+                        const start = new Date(session.startTime);
+                        const end = new Date(session.endTime);
+
+                        // Filtra solo le sessioni negli ultimi 7 giorni
+                        if (start >= sevenDaysAgo && start <= today) {
+                            const dateKey = UI_Manager.getISODate(start);
+                            const durationMinutes = (end - start) / (1000 * 60); // Durata in minuti
+
+                            if (!dailyDurations[dateKey]) {
+                                dailyDurations[dateKey] = {};
+                            }
+                            dailyDurations[dateKey][session.projectId] = (dailyDurations[dateKey][session.projectId] || 0) + durationMinutes;
+                        }
+                    }
+                });
+
+                const dates = [];
+                for (let d = new Date(sevenDaysAgo); d <= today; d.setDate(d.getDate() + 1)) {
+                    dates.push(UI_Manager.getISODate(d));
+                }
+
+                const datasets = Data_Manager.projects.map((project, index) => {
+                    const data = dates.map(date => dailyDurations[date]?.[project.id] || 0);
+                    return {
+                        label: project.name,
+                        data: data,
+                        backgroundColor: UI_Manager.chartColors[index % UI_Manager.chartColors.length],
+                        borderColor: UI_Manager.chartColors[index % UI_Manager.chartColors.length],
+                        borderWidth: 1,
+                        stack: 'dailyTime' // Rende il grafico a barre impilato
+                    };
+                });
+
+                if (datasets.every(ds => ds.data.every(val => val === 0))) {
+                    if (emptyStateContainer) {
+                        emptyStateContainer.innerHTML = UI_Manager.getEmptyChartState('Nessun dato di sessione registrato negli ultimi 7 giorni.');
+                        emptyStateContainer.classList.remove('hidden');
+                    }
+                    return;
+                } else {
+                    if (emptyStateContainer) emptyStateContainer.classList.add('hidden');
+                }
+
+                this.dailyProjectTimeChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: dates.map(date => new Date(date).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })),
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Tempo Lavorato al Giorno (Ultimi 7 Giorni)',
+                                font: { size: 16, weight: 'bold' }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.dataset.label || '';
+                                        const value = context.parsed.y;
+                                        return `${label}: ${UI_Manager.formatDuration(value * 60)}`;
+                                    },
+                                    footer: function(tooltipItems) {
+                                        let total = 0;
+                                        tooltipItems.forEach(function(tooltipItem) {
+                                            total += tooltipItem.parsed.y;
+                                        });
+                                        return 'Totale: ' + UI_Manager.formatDuration(total * 60);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                stacked: true,
+                                title: {
+                                    display: true,
+                                    text: 'Data'
+                                }
+                            },
+                            y: {
+                                stacked: true,
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Tempo (minuti)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return UI_Manager.formatDuration(value * 60);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            renderReportChart() {
+                const ctxContainer = document.getElementById('reportChartEmptyState') ? document.getElementById('reportChartEmptyState').parentNode : null;
+                const ctx = document.getElementById('reportChart');
+                const emptyStateContainer = document.getElementById('reportChartEmptyState');
+                const reportSummaryEl = document.getElementById('report-summary');
+
+                if (this.reportChart) {
+                    this.reportChart.destroy();
+                }
+
+                let filteredSessions = Data_Manager.sessions.filter(s => s.endTime !== null); // Solo sessioni terminate
+
+                const startDateFilter = this.currentReportFilters.startDate;
+                const endDateFilter = this.currentReportFilters.endDate;
+
+                if (startDateFilter) {
+                    const startOfDay = new Date(startDateFilter);
+                    startOfDay.setHours(0, 0, 0, 0);
+                    filteredSessions = filteredSessions.filter(s => new Date(s.startTime) >= startOfDay);
+                }
+                if (endDateFilter) {
+                    const endOfDay = new Date(endDateFilter);
+                    endOfDay.setHours(23, 59, 59, 999);
+                    filteredSessions = filteredSessions.filter(s => new Date(s.startTime) <= endOfDay);
+                }
+
+                const dailyProjectDurations = {}; // { 'YYYY-MM-DD': { projectId: durationInMinutes } }
+                let uniqueDates = new Set();
+                let totalReportDuration = 0;
+
+                filteredSessions.forEach(session => {
+                    const dateKey = UI_Manager.getISODate(new Date(session.startTime));
+                    const durationMinutes = (new Date(session.endTime) - new Date(session.startTime)) / (1000 * 60);
+                    
+                    if (!dailyProjectDurations[dateKey]) {
+                        dailyProjectDurations[dateKey] = {};
+                    }
+                    dailyProjectDurations[dateKey][session.projectId] = (dailyProjectDurations[dateKey][session.projectId] || 0) + durationMinutes;
+                    uniqueDates.add(dateKey);
+                    totalReportDuration += durationMinutes;
+                });
+
+                const sortedDates = Array.from(uniqueDates).sort();
+                
+                const datasets = Data_Manager.projects.map((project, index) => {
+                    return {
+                        label: project.name,
+                        data: sortedDates.map(date => dailyProjectDurations[date]?.[project.id] || 0),
+                        backgroundColor: UI_Manager.chartColors[index % UI_Manager.chartColors.length],
+                        borderColor: UI_Manager.chartColors[index % UI_Manager.chartColors.length],
+                        borderWidth: 1,
+                        stack: 'dailyTimeReport'
+                    };
+                });
+
+                if (datasets.every(ds => ds.data.every(val => val === 0))) {
+                    if (emptyStateContainer) {
+                        emptyStateContainer.innerHTML = UI_Manager.getEmptyChartState('Nessun dato di sessione trovato per i filtri selezionati.');
+                        emptyStateContainer.classList.remove('hidden');
+                    }
+                    reportSummaryEl.textContent = 'Nessun dato nel periodo selezionato.';
+                    return;
+                } else {
+                    if (emptyStateContainer) emptyStateContainer.classList.add('hidden');
+                }
+
+                this.reportChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: sortedDates.map(date => new Date(date).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })),
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Tempo Lavorato per Data e Progetto',
+                                font: { size: 16, weight: 'bold' }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.dataset.label || '';
+                                        const value = context.parsed.y;
+                                        return `${label}: ${UI_Manager.formatDuration(value * 60)}`;
+                                    },
+                                    footer: function(tooltipItems) {
+                                        let total = 0;
+                                        tooltipItems.forEach(function(tooltipItem) {
+                                            total += tooltipItem.parsed.y;
+                                        });
+                                        return 'Totale Giorno: ' + UI_Manager.formatDuration(total * 60);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                stacked: true,
+                                title: {
+                                    display: true,
+                                    text: 'Data'
+                                }
+                            },
+                            y: {
+                                stacked: true,
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Tempo (minuti)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return UI_Manager.formatDuration(value * 60);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                reportSummaryEl.textContent = `Totale tempo nel periodo selezionato: ${UI_Manager.formatDuration(totalReportDuration * 60)}`;
+            },
+
+
+            renderSessionHistory() {
+                const historyBody = document.getElementById('session-history');
+                const emptyStateContainer = document.getElementById('sessionHistoryEmptyState');
+                if (!historyBody || !emptyStateContainer) return;
+
+                let sessionsToShow = Data_Manager.sessions
+                    .filter(s => s.projectId === this.activeProjectId && s.endTime !== null) // Solo sessioni terminate per il progetto attivo
+                    .sort((a, b) => new Date(b.startTime) - new Date(a.startTime)); // Ordina dalla più recente
+
+                // Applica filtri
+                const filterStartDate = this.currentFilters.startDate;
+                const filterEndDate = this.currentFilters.endDate;
+                const searchQuery = this.currentFilters.searchQuery.toLowerCase();
+
+                if (filterStartDate) {
+                    const startOfDay = new Date(filterStartDate);
+                    startOfDay.setHours(0, 0, 0, 0);
+                    sessionsToShow = sessionsToShow.filter(session => new Date(session.startTime) >= startOfDay);
+                }
+                if (filterEndDate) {
+                    const endOfDay = new Date(filterEndDate);
+                    endOfDay.setHours(23, 59, 59, 999);
+                    sessionsToShow = sessionsToShow.filter(session => new Date(session.startTime) <= endOfDay);
+                }
+                if (searchQuery) {
+                    sessionsToShow = sessionsToShow.filter(session => 
+                        (session.notes && session.notes.toLowerCase().includes(searchQuery))
+                    );
+                }
+
+                if (sessionsToShow.length === 0) {
+                    historyBody.innerHTML = '';
+                    emptyStateContainer.classList.remove('hidden');
+                    return;
+                } else {
+                    emptyStateContainer.classList.add('hidden');
+                }
+
+                historyBody.innerHTML = sessionsToShow.map(session => {
+                    const start = new Date(session.startTime);
+                    const end = new Date(session.endTime);
+                    const durationSeconds = Math.floor((end - start) / 1000);
+                    const notesPreview = session.notes ? UI_Manager.wrapText(session.notes, 50) : '';
+
+                    return `
+                        <tr class="border-b border-gray-200 hover:bg-gray-100">
+                            <td class="py-3 px-6 text-left whitespace-nowrap">${start.toLocaleString('it-IT')}</td>
+                            <td class="py-3 px-6 text-left whitespace-nowrap">${end.toLocaleString('it-IT')}</td>
+                            <td class="py-3 px-6 text-left">${UI_Manager.formatDuration(durationSeconds)}</td>
+                            <td class="py-3 px-6 text-left">
+                                <p class="whitespace-pre-wrap">${notesPreview}</p>
+                            </td>
+                            <td class="py-3 px-6 text-center whitespace-nowrap">
+                                <div class="flex item-center justify-center space-x-2">
+                                    <button class="edit-session-btn text-blue-500 hover:text-blue-700 transition-colors" data-session-id="${session.id}" title="Modifica Sessione">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-7.79 7.79-2.828 2.828L7.79 13.586l7.79-7.79zM16 6l-2-2 3-3 2 2-3 3z" /></svg>
+                                    </button>
+                                    <button class="delete-session-btn text-red-500 hover:text-red-700 transition-colors" data-session-id="${session.id}" title="Elimina Sessione">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm6 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            },
+
+            applySessionFilters() {
+                this.currentFilters.startDate = document.getElementById('session-filter-start-date').value;
+                this.currentFilters.endDate = document.getElementById('session-filter-end-date').value;
+                this.currentFilters.searchQuery = document.getElementById('session-search-input').value;
+                this.renderSessionHistory();
+                UI_Manager.showNotification('Filtri sessioni applicati.', 'info');
+            },
+
+            clearSessionFilters() {
+                this.currentFilters.startDate = null;
+                this.currentFilters.endDate = null;
+                this.currentFilters.searchQuery = '';
+                document.getElementById('session-filter-start-date').value = '';
+                document.getElementById('session-filter-end-date').value = '';
+                document.getElementById('session-search-input').value = '';
+                this.renderSessionHistory();
+                UI_Manager.showNotification('Filtri sessioni resettati.', 'info');
+            },
+
+            editSession(sessionId) {
+                const session = Data_Manager.sessions.find(s => s.id === sessionId);
+                if (!session) {
+                    UI_Manager.showNotification('Sessione non trovata per la modifica.', 'error');
+                    return;
+                }
+
+                document.getElementById('edit-session-id').value = session.id;
+                const startDate = new Date(session.startTime);
+                const endDate = session.endTime ? new Date(session.endTime) : new Date(); // Se in corso, usa ora attuale
+
+                document.getElementById('edit-start-date').value = UI_Manager.getISODate(startDate);
+                document.getElementById('edit-start-time').value = UI_Manager.getISOTime(startDate);
+                document.getElementById('edit-end-date').value = UI_Manager.getISODate(endDate);
+                document.getElementById('edit-end-time').value = UI_Manager.getISOTime(endDate);
+                document.getElementById('edit-session-notes').value = session.notes || '';
+
+                UI_Manager.showModal('edit-session-modal');
+            },
+
+            saveEditedSession() {
+                const sessionId = parseInt(document.getElementById('edit-session-id').value);
+                const session = Data_Manager.sessions.find(s => s.id === sessionId);
+
+                if (!session) {
+                    UI_Manager.showNotification('Errore: Sessione da salvare non trovata.', 'error');
+                    return;
+                }
+
+                const startDate = document.getElementById('edit-start-date').value;
+                const startTime = document.getElementById('edit-start-time').value;
+                const endDate = document.getElementById('edit-end-date').value;
+                const endTime = document.getElementById('edit-end-time').value;
+                const notes = document.getElementById('edit-session-notes').value;
+
+                const newStartTime = new Date(`${startDate}T${startTime}:00`).toISOString();
+                const newEndTime = new Date(`${endDate}T${endTime}:00`).toISOString();
+
+                if (new Date(newEndTime) < new Date(newStartTime)) {
+                    UI_Manager.showNotification('Errore: La data/ora di fine non può essere precedente alla data/ora di inizio.', 'error');
+                    return;
+                }
+                
+                // Se la sessione è quella attualmente attiva, e viene modificata per essere chiusa
+                const activeSession = this.getActiveSession();
+                if (activeSession && activeSession.id === session.id) {
+                    // Se la nuova data di fine non è null, significa che la stiamo chiudendo
+                    if (newEndTime !== null) { 
+                        clearInterval(this.timerInterval);
+                        this.timerInterval = null;
+                        this.startTime = null;
+                        document.getElementById('timer-display').textContent = '00:00:00'; // Resetta il display
+                        document.getElementById('current-session-notes').value = ''; // Pulisci le note
+                    }
+                }
+
+                session.startTime = newStartTime;
+                session.endTime = newEndTime;
+                session.notes = notes;
+
+                Data_Manager.saveData();
+                this.renderAllUI(); // Rirende tutti i componenti per aggiornare grafici e tabelle
+                UI_Manager.hideModal('edit-session-modal');
+                UI_Manager.showNotification('Sessione modificata con successo!', 'success');
+            },
+
+            deleteSession(sessionId) {
+                // Controlla se la sessione da eliminare è quella attualmente attiva
+                const activeSession = this.getActiveSession();
+                if (activeSession && activeSession.id === sessionId) {
+                    clearInterval(this.timerInterval); // Ferma il timer
+                    this.timerInterval = null;
+                    this.startTime = null;
+                    document.getElementById('timer-display').textContent = '00:00:00'; // Resetta il display
+                    document.getElementById('current-session-notes').value = ''; // Pulisci le note
+                    UI_Manager.showNotification('La sessione attiva è stata interrotta e eliminata.', 'info');
+                }
+
+                Data_Manager.sessions = Data_Manager.sessions.filter(s => s.id !== sessionId);
+                Data_Manager.saveData();
+                this.renderAllUI();
+                UI_Manager.showNotification('Sessione eliminata con successo.', 'success');
+            }
+        };
+
+        // Inizializza l'applicazione al caricamento del DOM
+        document.addEventListener('DOMContentLoaded', () => {
+            App_Logic.init();
+        });
+    </script>
+</body>
+</html>
