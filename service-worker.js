@@ -3,7 +3,7 @@ const urlsToCache = [
   "index.html",
   "manifest.json",
   "service-worker.js"
-  // aggiungi eventuali altri file essenziali qui
+  // aggiungi eventuali altri file essenziali qui//
 ];
 
 // Install SW e cache iniziale
