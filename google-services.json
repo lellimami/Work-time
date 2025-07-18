@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "881379988787",
+    "project_id": "schedulatore-ore",
+    "storage_bucket": "schedulatore-ore.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:881379988787:android:99b921bb4a4cd66fc19a46",
+        "android_client_info": {
+          "package_name": "com.faber.worktime"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnlWd-6FyosaM6kW4gZHulf9L_xZOzvyk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
