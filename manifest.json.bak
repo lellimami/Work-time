@@ -2,7 +2,7 @@
   "name": "Tracciamento Progetti Desktop",
   "short_name": "Schedulatore",
   "description": "App per tracciare progetti e sessioni di lavoro.",
-  "start_url": "index.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#F8F7F4",
   "theme_color": "#3AAFA9",
