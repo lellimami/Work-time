@@ -1,0 +1,17 @@
+<svg width="170" height="170" viewBox="0 0 170 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sfondo bianco -->
+  <circle cx="85" cy="85" r="80" fill="#fff" stroke="#1a3957" stroke-width="3"/>
+  <circle cx="85" cy="85" r="74" fill="none" stroke="#1a3957" stroke-width="2"/>
+  <circle cx="85" cy="85" r="68" fill="none" stroke="#1a3957" stroke-width="2"/>
+  <!-- Tacche orologio -->
+  <circle cx="85" cy="35" r="5" fill="#1a3957" stroke="#fff" stroke-width="2"/>
+  <circle cx="85" cy="135" r="5" fill="#1a3957" stroke="#fff" stroke-width="2"/>
+  <circle cx="35" cy="85" r="5" fill="#1a3957" stroke="#fff" stroke-width="2"/>
+  <circle cx="135" cy="85" r="5" fill="#1a3957" stroke="#fff" stroke-width="2"/>
+  <!-- Lancetta delle ore verticale -->
+  <rect x="81" y="45" width="8" height="43" rx="4" fill="#b3d1f6" stroke="#1a3957" stroke-width="2"/>
+  <!-- Lancetta dei minuti inclinata -->
+  <rect x="81" y="85" width="8" height="47" rx="4" fill="#b3d1f6" stroke="#1a3957" stroke-width="2" transform="rotate(45 85 85)"/>
+  <!-- "wT" rosso centrale, stile arrotondato/brush -->
+  <text x="42" y="110" font-family="'Baguet Script', 'Brush Script MT', cursive, sans-serif" font-size="48" fill="#ff0000" font-weight="bold">WT</text>
+</svg>
